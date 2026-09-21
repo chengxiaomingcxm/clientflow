@@ -180,3 +180,53 @@ describe("Row Level Security policies", () => {
     }
   });
 });
+
+describe("profile lifecycle migration", () => {
+  it("creates a profile for every new auth user from a trigger", () => {
+    expect(sql).toMatch(/create or replace function public\.handle_new_user\(\)/);
+    expect(sql).toMatch(/after insert on auth\.users/);
+    expect(sql).toMatch(/execute function public\.handle_new_user\(\)/);
+  });
+
+  it("runs the trigger as SECURITY DEFINER with a fixed, empty search_path", () => {
+    const definition = sql.match(
+      /create or replace function public\.handle_new_user\(\)([\s\S]*?)\$\$;/,
+    )?.[1];
+
+    expect(definition, "handle_new_user() not found").toBeDefined();
+    expect(definition).toMatch(/security definer/);
+    expect(definition).toMatch(/set search_path = ''/);
+  });
+
+  it("writes only the new user's own row, idempotently", () => {
+    expect(sql).toMatch(
+      /insert into public\.profiles \(user_id, email, full_name\)\s+values \(\s*new\.id/,
+    );
+    expect(sql).toMatch(/on conflict \(user_id\) do nothing/);
+  });
+
+  it("normalises untrusted sign-up metadata before storing it", () => {
+    // Trimmed, empty becomes NULL, and truncated to the length the
+    // profiles_full_name_check constraint allows.
+    expect(sql).toMatch(/nullif\(left\(btrim\(coalesce\(new\.raw_user_meta_data ->> 'full_name'/);
+  });
+
+  it("keeps the trigger function out of reach of API roles", () => {
+    for (const role of ["public", "anon", "authenticated"]) {
+      expect(sql).toMatch(
+        new RegExp(`revoke all on function public\\.handle_new_user\\(\\) from ${role};`),
+      );
+    }
+  });
+
+  it("backfills accounts that predate the trigger", () => {
+    expect(sql).toMatch(/insert into public\.profiles \(user_id, email\)\s+select id, email/);
+    expect(sql).toMatch(/where email is not null/);
+  });
+
+  it("adds no new Row Level Security policy", () => {
+    // The trigger is SECURITY DEFINER, so it needs no policy. Ownership remains
+    // governed solely by the Phase 0 owner-only policies asserted above.
+    expect(policies).toHaveLength(16);
+  });
+});

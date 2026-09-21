@@ -33,9 +33,13 @@ grant usage on schema public to anon, authenticated, service_role;
 
 create schema if not exists auth;
 
+-- Mirrors the parts of Supabase's auth.users that the migrations and triggers
+-- depend on. `raw_user_meta_data` is where GoTrue stores sign-up metadata such as
+-- `full_name`, which `public.handle_new_user()` (Phase 1) reads.
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
-  email text not null unique
+  email text not null unique,
+  raw_user_meta_data jsonb
 );
 
 -- Same definition Supabase installs. PostgREST sets `request.jwt.claims` from

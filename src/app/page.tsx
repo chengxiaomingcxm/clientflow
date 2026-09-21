@@ -1,18 +1,21 @@
+import Link from "next/link";
+
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
- * Phase 0 placeholder page.
+ * Public landing page.
  *
- * It intentionally contains no business functionality (no clients, projects or
- * tasks): it only proves that the Next.js + Tailwind + shadcn/ui shell renders
- * and gives the Playwright smoke test something stable to assert against.
+ * It stays unauthenticated on purpose: it is the entry point that offers sign-in
+ * and registration. Anything that requires a session lives under the `(app)`
+ * route group, which is gated on the server.
  */
-const foundationItems = [
-  "Next.js App Router with TypeScript and Tailwind CSS v4",
-  "shadcn/ui primitives and shared class-name helper",
-  "Supabase browser and server clients via @supabase/ssr (no auth flows yet)",
-  "PostgreSQL schema, composite tenant foreign keys and owner-only Row Level Security",
-  "Vitest unit tests, Playwright smoke tests and GitHub Actions CI",
+const implementedItems = [
+  "Email and password accounts with server-verified sessions",
+  "Profiles created automatically by a database trigger, not by the browser",
+  "Protected routes enforced on the server, never by client-side state",
+  "Row Level Security with owner-only policies on every table",
+  "Input validation shared by the browser form and the Server Action",
 ];
 
 export default function Home() {
@@ -23,26 +26,35 @@ export default function Home() {
           <p className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
             ClientFlow V1.0
           </p>
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            ClientFlow foundation
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">ClientFlow</h1>
           <p className="text-base leading-7 text-muted-foreground">
-            A lightweight CRM and project management app for freelancers and small agencies. Product
-            features arrive in later phases; this page only confirms that the Phase 0 setup is
-            running.
+            A lightweight CRM and project management app for freelancers and small agencies: keep
+            your clients, projects and tasks in one place.
           </p>
+
+          <div className="flex flex-wrap gap-3 pt-2">
+            <Link href="/login" className={buttonVariants()}>
+              Sign in
+            </Link>
+            <Link href="/register" className={buttonVariants({ variant: "outline" })}>
+              Create account
+            </Link>
+          </div>
         </header>
 
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2>Phase 0 &mdash; architecture and project setup</h2>
+              <h2>Phase 1 &mdash; authentication and profiles</h2>
             </CardTitle>
-            <CardDescription>No business features are implemented yet.</CardDescription>
+            <CardDescription>
+              Client, project and task management arrive in later phases.
+            </CardDescription>
           </CardHeader>
+
           <CardContent>
             <ul className="space-y-2">
-              {foundationItems.map((item) => (
+              {implementedItems.map((item) => (
                 <li key={item} className="flex gap-2">
                   <span aria-hidden="true" className="text-muted-foreground">
                     &bull;

@@ -1,17 +1,17 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Phase 0 smoke tests.
+ * Public-shell smoke tests.
  *
- * They verify that the application shell renders, that the production server
- * responds correctly and that the page does not break at mobile width. Business
- * flows (auth, clients, projects, tasks) are covered in later phases.
+ * They verify that the landing page renders, that the production server responds
+ * correctly and that the page does not break at mobile width. Authentication
+ * flows are covered in `auth.spec.ts`, and clients/projects/tasks in later phases.
  */
-test("renders the ClientFlow Phase 0 status page", async ({ page }) => {
+test("renders the ClientFlow landing page", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("ClientFlow foundation");
-  await expect(page.getByRole("heading", { level: 2 })).toContainText("Phase 0");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("ClientFlow");
+  await expect(page.getByRole("heading", { level: 2 })).toContainText("Phase 1");
   await expect(page).toHaveTitle(/ClientFlow/);
 });
 

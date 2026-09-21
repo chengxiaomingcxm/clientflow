@@ -255,11 +255,9 @@ describeWithDatabase("database schema and Row Level Security", () => {
     });
 
     it("only exposes a profile to its owner", async () => {
-      await queryAsUser(USER_A, "insert into public.profiles (user_id, email) values ($1, $2)", [
-        USER_A,
-        "owner-a@example.com",
-      ]);
-
+      // `public.handle_new_user()` already created one profile per auth user when
+      // `beforeEach` inserted them, so an explicit INSERT here would violate the
+      // primary key.
       const ownProfile = await queryAsUser<{ user_id: string }>(
         USER_A,
         "select user_id from public.profiles",
@@ -270,7 +268,8 @@ describeWithDatabase("database schema and Row Level Security", () => {
         USER_B,
         "select user_id from public.profiles",
       );
-      expect(otherProfile.rows).toEqual([]);
+      // B sees their own profile, and never A's.
+      expect(otherProfile.rows.map((row) => row.user_id)).toEqual([USER_B]);
     });
 
     it("gives the anon role no access at all", async () => {
@@ -308,7 +307,7 @@ describeWithDatabase("database schema and Row Level Security", () => {
     it("removes every tenant row when the owning account is deleted", async () => {
       await admin.query("delete from auth.users where id = $1", [USER_A]);
 
-      for (const table of ["clients", "projects", "tasks"] as const) {
+      for (const table of ["profiles", "clients", "projects", "tasks"] as const) {
         const remaining = await admin.query<{ count: number }>(
           `select count(*)::int as count from public.${table} where user_id = $1`,
           [USER_A],

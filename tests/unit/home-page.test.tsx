@@ -4,30 +4,42 @@ import { describe, expect, it } from "vitest";
 import Home from "@/app/page";
 
 /**
- * The Phase 0 landing page is a synchronous Server Component, so it can be
- * rendered directly with React Testing Library.
+ * Landing page suite.
+ *
+ * The page is a synchronous Server Component, so it can be rendered directly
+ * with React Testing Library. In Phase 1 it stays public: it is the entry point
+ * that offers sign-in and registration, and it must not leak protected content.
  */
-describe("Phase 0 landing page", () => {
+describe("landing page", () => {
   it("renders the product name as the page heading", () => {
     render(<Home />);
 
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ClientFlow foundation");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ClientFlow");
   });
 
-  it("renders the Phase 0 status section", () => {
+  it("describes the current phase", () => {
     render(<Home />);
 
-    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Phase 0");
-    expect(screen.getByText(/no business features are implemented yet/i)).toBeInTheDocument();
-  });
-
-  it("lists the foundation items that Phase 0 delivered", () => {
-    render(<Home />);
-
-    const items = screen.getAllByRole("listitem");
-    expect(items).toHaveLength(5);
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Phase 1");
     expect(
-      screen.getByText(/owner-only Row Level Security/i, { exact: false }),
+      screen.getByText(/client, project and task management arrive in later phases/i),
     ).toBeInTheDocument();
+  });
+
+  it("offers a route into authentication", () => {
+    render(<Home />);
+
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute(
+      "href",
+      "/register",
+    );
+  });
+
+  it("lists what Phase 1 delivered", () => {
+    render(<Home />);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+    expect(screen.getByText(/owner-only policies on every table/i)).toBeInTheDocument();
   });
 });

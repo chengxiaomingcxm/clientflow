@@ -51,6 +51,28 @@ export function getPublicEnv(): PublicEnv {
 }
 
 /**
+ * Non-throwing variant of {@link getPublicEnv}.
+ *
+ * Used by code that has to keep working when Supabase is not configured yet —
+ * the auth proxy, the protected layout and CI runs without credentials. It
+ * returns `null` instead of throwing so that "not configured" can be handled
+ * deliberately, rather than being confused with an authentication failure.
+ */
+export function getPublicEnvOrNull(): PublicEnv | null {
+  const result = publicEnvSchema.safeParse({
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  });
+
+  return result.success ? result.data : null;
+}
+
+/** `true` when Supabase is configured and safe to talk to. */
+export function isPublicEnvConfigured(): boolean {
+  return getPublicEnvOrNull() !== null;
+}
+
+/**
  * Guards against a Supabase secret key being pasted into a public variable.
  * Detects the newer `sb_secret_*` format and legacy JWTs whose payload has
  * `"role": "service_role"`. Anything undecodable is treated as harmless so

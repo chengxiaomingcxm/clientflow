@@ -4,10 +4,10 @@ ClientFlow is a lightweight CRM and project management application for freelance
 agencies. The core workflow is **User → Client → Project → Task → Dashboard**, with revenue
 tracking and dashboard analytics.
 
-> **Project status: Phase 0 (architecture and project setup) is complete.**
-> No product features are implemented yet. Authentication, client/project/task management,
-> dashboards, demo mode and polish arrive in Phases 1–6.
-> The home page is a placeholder that only confirms the foundation runs.
+> **Project status: Phase 1 (authentication and profiles) is complete.**
+> Email/password accounts, automatic profile creation, server-verified sessions and protected
+> routes are implemented. Client, project and task management arrive in Phases 2–4, the dashboard
+> metrics in Phase 5, and demo mode plus polish in Phase 6.
 
 ## Tech stack
 
@@ -26,9 +26,10 @@ tracking and dashboard analytics.
 ## Prerequisites
 
 - **Node.js >= 20.9.0** (developed against Node 24) and npm
-- A **Supabase project** — only needed once you work on database-backed features
-- A **PostgreSQL 15+ database** with the `auth` stand-in applied — only needed for the Row Level
-  Security integration tests (`npm run test:db`)
+- A **Supabase project** — required for sign-in, registration and anything that reads or writes
+  tenant data. Without it the app still runs and explains that authentication is not configured.
+- A **PostgreSQL 15+ database** with the `auth` stand-in applied — only needed for the database
+  integration tests (`npm run test:db`)
 
 ## Getting started
 
@@ -61,6 +62,7 @@ committed: `.env*` is ignored except for the template.
 | `NEXT_PUBLIC_SUPABASE_URL`      | App      | Supabase project URL                                                    |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | App      | Supabase publishable/anon key (browser-safe, limited by RLS)            |
 | `TEST_DATABASE_URL`             | Tests    | PostgreSQL instance used by the RLS integration tests; never production |
+| `CLIENTFLOW_E2E_*`              | Optional | Credentials for the live auth E2E suite; see `.env.example`             |
 
 `src/lib/env.ts` validates the public variables lazily and fails with an actionable message.
 It also rejects a Supabase **secret** (`sb_secret_*`) or **service-role** key if one is pasted
@@ -90,21 +92,69 @@ reach the browser.
 
 ```
 src/
-  app/                     App Router entry points (layout, page, globals.css)
-  components/ui/           shadcn/ui primitives (button, card)
+  app/                     App Router
+    (auth)/                Public auth pages: /login, /register
+    (app)/                 Protected shell plus /dashboard and /settings
+    auth/confirm/          Email-confirmation callback (Route Handler)
+  components/auth/         Login and register forms, sign-out button, notices
+  components/profile/      Profile form
+  components/ui/           shadcn/ui primitives (button, card, input, label, alert)
   lib/
     env.ts                 Validated public environment configuration
     supabase/client.ts     Browser Supabase client (@supabase/ssr)
     supabase/server.ts     Server Supabase client + cookie adapter
+    auth/                  Identity, Server Actions, error mapping, redirect safety
+    profile/queries.ts     Reads the signed-in user's own profile
+    validation/auth.ts     Zod schemas shared by the forms and the Server Actions
   types/database.ts        Database types (temporary scaffold, see below)
+  proxy.ts                 Session refresh (Next.js 16 renamed middleware to proxy)
 supabase/migrations/       SQL migrations applied in filename order
 tests/
   unit/                    Vitest unit and component tests
-  db/                      Row Level Security integration tests
-  e2e/                     Playwright smoke tests
+  db/                      PostgreSQL migration + Row Level Security integration tests
+  e2e/                     Playwright tests (auth-live.spec.ts needs a live project)
   fixtures/, stubs/        Shared test fixtures
 docs/                      Product and phase instructions
 ```
+
+## Authentication and profiles
+
+V1.0 supports **email + password** accounts only (no OAuth, magic link, MFA or phone-only accounts).
+
+| Concern                            | Where it lives                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------ |
+| Session refresh                    | `src/proxy.ts` — rotates Supabase cookies and makes **no** authorization decisions   |
+| Authorization boundary             | `src/app/(app)/layout.tsx` — every route in the group requires a verified session    |
+| Identity lookup                    | `src/lib/auth/user.ts` — `getUser()` (server-verified), never `getSession()`         |
+| Sign in / up / out, profile update | `src/lib/auth/actions.ts` — Server Actions                                           |
+| Validation                         | `src/lib/validation/auth.ts` — one Zod schema shared by the form and the action      |
+| Safe error messages                | `src/lib/auth/errors.ts` — a fixed message table; upstream text never reaches the UI |
+| Redirect targets                   | `src/lib/auth/redirect.ts` — `sanitizeNextPath` prevents open redirects              |
+| Email confirmation                 | `src/app/auth/confirm/route.ts` — exchanges the PKCE code in a Route Handler         |
+
+Key properties:
+
+- **Server-first.** Whether a visitor is signed in is decided on the server, and a protected page is
+  never rendered for an unverified session. Client-side state is never the gate.
+- **Fail closed.** Missing configuration, an unreachable Auth service and an absent session all send
+  the visitor to `/login`, which explains which of the three applies. No protected content is
+  produced in any of those cases.
+- **No account enumeration.** A wrong password and an unknown email produce the same message, and a
+  failed sign-up never reveals that an address is already registered.
+- **Profiles are created by the database**, not by the browser — see `handle_new_user()` below.
+- **No service-role key.** Phase 1 does not need one: authorization comes from the user's own
+  session plus Row Level Security.
+
+### Routes
+
+| Route           | Access    | Notes                                                                   |
+| --------------- | --------- | ----------------------------------------------------------------------- |
+| `/`             | Public    | Landing page with links into the auth flow                              |
+| `/login`        | Public    | A signed-in visitor is redirected to `next` (sanitised) or `/dashboard` |
+| `/register`     | Public    | Same redirect behaviour                                                 |
+| `/auth/confirm` | Public    | Email-confirmation callback; always redirects with `303`                |
+| `/dashboard`    | Protected | Minimal authenticated landing page (metrics are Phase 5)                |
+| `/settings`     | Protected | Phase 1 profile: shows the email, edits the display name                |
 
 ## Database
 
@@ -112,20 +162,41 @@ docs/                      Product and phase instructions
 
 Schema changes live in `supabase/migrations/` and are applied in filename order.
 
-The initial migration (`20260921000000_init_clientflow_schema.sql`) creates the four entities of
-the product — `profiles`, `clients`, `projects`, `tasks` — together with enums for project status,
-task status and priority, indexes, `updated_at` triggers and Row Level Security.
+The migrations are:
 
-Apply it with the Supabase CLI (recommended) or plain `psql`:
+1. `20260921000000_init_clientflow_schema.sql` — the four entities of the product (`profiles`,
+   `clients`, `projects`, `tasks`), enums for project status, task status and priority, composite
+   tenant keys and foreign keys, indexes, `updated_at` triggers and Row Level Security.
+2. `20260922000000_add_handle_new_user_trigger.sql` — the Phase 1 profile lifecycle: a trigger on
+   `auth.users` that creates the matching `profiles` row (see below).
+
+Apply them with the Supabase CLI (recommended) or plain `psql`:
 
 ```bash
 # Supabase CLI
 npx supabase link --project-ref <project-ref>
 npx supabase db push
 
-# or, against any PostgreSQL 15+ database
-psql "$DATABASE_URL" -f supabase/migrations/20260921000000_init_clientflow_schema.sql
+# or, against any PostgreSQL 15+ database, in filename order
+for file in supabase/migrations/*.sql; do psql "$DATABASE_URL" -f "$file"; done
 ```
+
+### Profile lifecycle
+
+`public.handle_new_user()` is a `SECURITY DEFINER` trigger function with `set search_path = ''`
+that inserts the new user's `profiles` row in the same transaction that creates the account:
+
+- A profile cannot exist for a user who does not exist, and cannot be created for somebody else —
+  the function only ever writes `new.id`'s own row.
+- `full_name` comes from the sign-up metadata, is trimmed, becomes `NULL` when blank, and is
+  truncated to the 120 characters the check constraint allows so hostile metadata cannot block
+  sign-up.
+- `EXECUTE` is revoked from `PUBLIC`, `anon` and `authenticated`, so the function is not reachable
+  as an RPC — it can only fire as a trigger.
+- Deleting the account cascades and removes the profile.
+
+Because this is a database trigger, a client is never responsible for establishing profile
+ownership.
 
 ### Tenant ownership model
 
@@ -171,20 +242,27 @@ npx supabase gen types typescript --linked --schema public > src/types/database.
 ```bash
 npm test                            # unit + database suites (Vitest)
 npm run test:db                     # Row Level Security integration suite only
-npm run build && npm run test:e2e   # Playwright smoke tests against the production build
+npm run build && npm run test:e2e   # Playwright tests against the production build
 ```
 
-| Suite      | Location     | Covers                                                                          |
-| ---------- | ------------ | ------------------------------------------------------------------------------- |
-| Unit       | `tests/unit` | environment validation, Supabase client wiring, migration invariants, home page |
-| Database   | `tests/db`   | migration + RLS applied to a real PostgreSQL instance                           |
-| End-to-end | `tests/e2e`  | shell renders, 404 behaviour, no console errors, mobile layout                  |
+| Suite      | Location     | Covers                                                                                                     |
+| ---------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| Unit       | `tests/unit` | env validation, Supabase wiring, Zod schemas, error mapping, redirect safety, Server Actions, proxy, forms |
+| Database   | `tests/db`   | migrations + RLS + the profile trigger against a real PostgreSQL instance                                  |
+| End-to-end | `tests/e2e`  | protected-route redirects, form validation, open-redirect defence, console errors, mobile layout           |
 
 The database suite requires `TEST_DATABASE_URL` pointing at a throwaway PostgreSQL 15+ database.
 It creates the Supabase `auth` stand-in from `tests/db/bootstrap.sql`, drops and recreates the
 `public` schema, applies the migrations and then asserts tenant isolation as the `authenticated`
 role (and constraint behaviour with RLS bypassed). If `TEST_DATABASE_URL` is unset the suite is
 skipped with a warning — CI always sets it.
+
+> **`tests/e2e/auth-live.spec.ts` is NOT VERIFIED AGAINST LIVE SUPABASE.** ClientFlow has no
+> Supabase project linked yet, so that file skips itself and reports the reason. It requires
+> `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `CLIENTFLOW_E2E_EMAIL` and
+> `CLIENTFLOW_E2E_PASSWORD` (plus the optional `CLIENTFLOW_E2E_OTHER_*` pair for a second tenant).
+> Sign-in, sign-out, the profile round-trip and browser-level cross-tenant isolation can only be
+> proven there; everything else is covered without a project.
 
 ## Continuous integration
 
@@ -215,14 +293,15 @@ colour), so newly added components stay consistent with the existing primitives.
 | Phase | Scope                                                                 | Status      |
 | ----- | --------------------------------------------------------------------- | ----------- |
 | 0     | Architecture, tooling, database foundation, RLS, tests, CI            | **Done**    |
-| 1     | Authentication, profiles, protected routes                            | Not started |
+| 1     | Authentication, profiles, protected routes                            | **Done**    |
 | 2     | Client management                                                     | Not started |
 | 3     | Project management                                                    | Not started |
 | 4     | Task management and project progress                                  | Not started |
 | 5     | Dashboard and revenue calculations                                    | Not started |
 | 6     | Demo mode, responsiveness, accessibility, security review, deployment | Not started |
 
-Nothing from Phases 1–6 is implemented: there is no sign-in, no protected route and no CRUD UI.
+Nothing from Phases 2–6 is implemented: there is no client, project or task CRUD UI, no dashboard
+metrics and no demo mode. `/dashboard` is deliberately an empty authenticated landing page.
 
 ## Repository notes
 
