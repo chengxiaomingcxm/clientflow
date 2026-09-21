@@ -1,0 +1,21 @@
+# Build output
+.next/
+out/
+build/
+
+# Dependencies
+node_modules/
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Generated files
+package-lock.json
+next-env.d.ts
+
+# Product documentation is authored by hand and must not be reformatted by
+# tooling. (docs/ is tracked in git.)
+docs/
