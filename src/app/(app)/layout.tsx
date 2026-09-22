@@ -9,6 +9,7 @@ import { getCurrentUser, type AuthenticatedUser } from "@/lib/auth/user";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/clients", label: "Clients" },
   { href: "/settings", label: "Settings" },
 ] as const;
 

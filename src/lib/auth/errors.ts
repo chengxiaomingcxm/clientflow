@@ -35,7 +35,20 @@ export type AuthFailureCode =
   | "unexpected";
 
 export type AuthOperation =
-  "sign_in" | "sign_up" | "sign_out" | "confirm_session" | "load_user" | "update_profile";
+  | "sign_in"
+  | "sign_up"
+  | "sign_out"
+  | "confirm_session"
+  | "load_user"
+  | "update_profile"
+  // Authenticated operations outside the authentication domain (Phase 2 clients).
+  // The guard itself is domain-agnostic — it only verifies the session — and the
+  // operation name merely labels the sanitised log line.
+  | "list_clients"
+  | "load_client"
+  | "create_client"
+  | "update_client"
+  | "delete_client";
 
 export type AuthFailureDiagnostic = {
   operation: AuthOperation;

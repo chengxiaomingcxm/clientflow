@@ -1,5 +1,3 @@
-import type { ZodError } from "zod";
-
 /**
  * Shape shared by the authentication and profile forms.
  *
@@ -10,6 +8,11 @@ import type { ZodError } from "zod";
  *
  *  - `error`  — something failed; show it as an alert.
  *  - `notice` — informational, e.g. "confirm your email" or "profile updated".
+ *
+ * The two generic helpers (`toFieldErrors`, `readFormString`) moved to
+ * `src/lib/forms/form-state.ts` in Phase 2 so the client forms could reuse them
+ * instead of copying them. They are re-exported below, which keeps this module's
+ * API — and therefore every Phase 1 import — unchanged.
  */
 export type AuthFormState = {
   status: "idle" | "error" | "notice";
@@ -58,26 +61,10 @@ export function noticeState(
 }
 
 /**
- * Flattens Zod issues into per-field messages.
+ * Generic form helpers, re-exported for backward compatibility.
  *
- * Implemented directly from `error.issues` (rather than a Zod helper) so the
- * behaviour does not depend on a particular Zod release, and so an issue
- * without a path is attributed to the form itself.
+ * Phase 1 defined them here; Phase 2 moved the implementations to
+ * `src/lib/forms/form-state.ts` so the client forms share one copy. Every
+ * existing import path (`@/lib/auth/form-state`) keeps working.
  */
-export function toFieldErrors(error: ZodError): Record<string, string[]> {
-  const fieldErrors: Record<string, string[]> = {};
-
-  for (const issue of error.issues) {
-    const key = issue.path.length > 0 ? String(issue.path[0]) : "form";
-    (fieldErrors[key] ??= []).push(issue.message);
-  }
-
-  return fieldErrors;
-}
-
-/** Reads a form value as a trimmed string, treating missing entries as "". */
-export function readFormString(formData: FormData, key: string): string {
-  const value = formData.get(key);
-
-  return typeof value === "string" ? value : "";
-}
+export { readFormString, toFieldErrors } from "@/lib/forms/form-state";

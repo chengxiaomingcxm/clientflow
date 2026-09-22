@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { FieldError, FormAlert, fieldErrorId } from "@/components/auth/form-feedback";
+import { FieldError, FormAlert, fieldErrorId } from "@/components/forms/form-feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

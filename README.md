@@ -4,10 +4,11 @@ ClientFlow is a lightweight CRM and project management application for freelance
 agencies. The core workflow is **User → Client → Project → Task → Dashboard**, with revenue
 tracking and dashboard analytics.
 
-> **Project status: Phase 1 (authentication and profiles) is complete.**
-> Email/password accounts, automatic profile creation, server-verified sessions and protected
-> routes are implemented. Client, project and task management arrive in Phases 2–4, the dashboard
-> metrics in Phase 5, and demo mode plus polish in Phase 6.
+> **Project status: Phase 2 (client management) is complete.**
+> Email/password accounts, automatic profile creation, server-verified sessions, protected
+> routes and full client CRUD are implemented, each with unit, database and end-to-end
+> coverage. Project and task management arrive in Phases 3–4, the dashboard metrics in
+> Phase 5, and demo mode plus polish in Phase 6.
 
 ## Tech stack
 
@@ -94,18 +95,24 @@ reach the browser.
 src/
   app/                     App Router
     (auth)/                Public auth pages: /login, /register
-    (app)/                 Protected shell plus /dashboard and /settings
+    (app)/                 Protected shell plus /dashboard, /clients and /settings
+      clients/             /clients, /clients/new, /clients/[clientId], .../edit
     auth/confirm/          Email-confirmation callback (Route Handler)
   components/auth/         Login and register forms, sign-out button, notices
+  components/clients/      Client form, client list, delete confirmation
+  components/forms/        Form feedback shared by every form (alerts, field errors)
   components/profile/      Profile form
-  components/ui/           shadcn/ui primitives (button, card, input, label, alert)
+  components/ui/           shadcn/ui primitives (button, card, input, label, alert, textarea)
   lib/
     env.ts                 Validated public environment configuration
     supabase/client.ts     Browser Supabase client (@supabase/ssr)
     supabase/server.ts     Server Supabase client + cookie adapter
     auth/                  Identity, Server Actions, error mapping, redirect safety
+    clients/               Client data access, Server Actions, error mapping, form state
     profile/queries.ts     Reads the signed-in user's own profile
+    forms/form-state.ts    Generic form primitives (field errors, form values)
     validation/auth.ts     Zod schemas shared by the forms and the Server Actions
+    validation/clients.ts  Zod schemas shared by create and edit
   types/database.ts        Database types (temporary scaffold, see below)
   proxy.ts                 Session refresh (Next.js 16 renamed middleware to proxy)
 supabase/migrations/       SQL migrations applied in filename order
@@ -237,6 +244,36 @@ linked yet. Replace it with generated types as soon as a project exists:
 npx supabase gen types typescript --linked --schema public > src/types/database.ts
 ```
 
+## Clients (Phase 2)
+
+`/clients` lists the signed-in user's clients, `/clients/new` creates one, `/clients/[clientId]`
+shows one, and `/clients/[clientId]/edit` changes one. Deleting happens from the detail page behind
+an explicit confirmation step.
+
+| Concern           | Where it lives                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| Routes            | `src/app/(app)/clients/**` — Server Components only, no client-side data layer                                |
+| Data access (DAL) | `src/lib/clients/queries.ts` — `listClients`, `getClientById`, `createClient`, `updateClient`, `deleteClient` |
+| Server Actions    | `src/lib/clients/actions.ts` — `createClientAction`, `updateClientAction`, `deleteClientAction`               |
+| Validation        | `src/lib/validation/clients.ts` — one Zod schema shared by create and edit                                    |
+| UI                | `src/components/clients/**` — one form component for both operations                                          |
+| Failure mapping   | `src/lib/clients/errors.ts` — fixed, safe sentences; upstream text stays server-side                          |
+
+Design notes:
+
+- **Ownership comes from the session.** The forms submit no `user_id`/`owner_id`; the action reads
+  `auth.user.id` after verifying the session and the DAL writes it last, so it cannot be overridden
+  by a submitted field. The Zod schema also strips any such field that a tampered request adds.
+- **Every statement is owner-scoped.** Reads and writes carry `user_id = auth.uid()` in addition to
+  the outer `id` predicate, and Row Level Security enforces the same condition in the database.
+- **Not-found semantics are uniform.** A missing client, another tenant's client and a malformed id
+  all become `not_found`, which the detail and edit pages render through `notFound()` — a 404 that
+  reveals nothing about whether the row exists elsewhere.
+- **Delete is a POST**, not a link, and the confirmation is a UI safeguard rather than the security
+  boundary: a delete can only ever match a row the caller owns.
+- **No new migration.** `public.clients` and its four owner-only policies already existed from
+  Phase 0; Phase 2 adds no schema change.
+
 ## Testing
 
 ```bash
@@ -248,8 +285,13 @@ npm run build && npm run test:e2e   # Playwright tests against the production bu
 | Suite      | Location     | Covers                                                                                                     |
 | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
 | Unit       | `tests/unit` | env validation, Supabase wiring, Zod schemas, error mapping, redirect safety, Server Actions, proxy, forms |
-| Database   | `tests/db`   | migrations + RLS + the profile trigger against a real PostgreSQL instance                                  |
+| Database   | `tests/db`   | migrations + RLS + the profile trigger + client tenant isolation against a real PostgreSQL instance        |
 | End-to-end | `tests/e2e`  | protected-route redirects, form validation, open-redirect defence, console errors, mobile layout           |
+
+Phase 2 adds `clients-validation`, `clients-queries`, `clients-actions`, `client-list`,
+`client-form` and `delete-client-form` unit suites, the `clients-rls` database suite (tenant A's own
+CRUD, tenant B denied on select/update/delete, re-parenting refused, `anon` denied) and
+`clients.spec.ts` for the end-to-end flows.
 
 The database suite requires `TEST_DATABASE_URL` pointing at a throwaway PostgreSQL 15+ database.
 It creates the Supabase `auth` stand-in from `tests/db/bootstrap.sql`, drops and recreates the
@@ -257,12 +299,14 @@ It creates the Supabase `auth` stand-in from `tests/db/bootstrap.sql`, drops and
 role (and constraint behaviour with RLS bypassed). If `TEST_DATABASE_URL` is unset the suite is
 skipped with a warning — CI always sets it.
 
-> **`tests/e2e/auth-live.spec.ts` is NOT VERIFIED AGAINST LIVE SUPABASE.** ClientFlow has no
-> Supabase project linked yet, so that file skips itself and reports the reason. It requires
+> **`tests/e2e/auth-live.spec.ts` and the `live client management` block of
+> `tests/e2e/clients.spec.ts` are NOT VERIFIED AGAINST LIVE SUPABASE.** ClientFlow has no
+> Supabase project linked yet, so those blocks skip themselves and report the reason. They require
 > `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `CLIENTFLOW_E2E_EMAIL` and
 > `CLIENTFLOW_E2E_PASSWORD` (plus the optional `CLIENTFLOW_E2E_OTHER_*` pair for a second tenant).
-> Sign-in, sign-out, the profile round-trip and browser-level cross-tenant isolation can only be
-> proven there; everything else is covered without a project.
+> Sign-in, sign-out, the profile round-trip, browser-level cross-tenant isolation and the client
+> create → detail → edit → delete round trip can only be proven there; the protected-route and
+> validation behaviour of the client pages is covered without a project.
 
 ## Continuous integration
 
@@ -294,13 +338,15 @@ colour), so newly added components stay consistent with the existing primitives.
 | ----- | --------------------------------------------------------------------- | ----------- |
 | 0     | Architecture, tooling, database foundation, RLS, tests, CI            | **Done**    |
 | 1     | Authentication, profiles, protected routes                            | **Done**    |
-| 2     | Client management                                                     | Not started |
+| 2     | Client management                                                     | **Done**    |
 | 3     | Project management                                                    | Not started |
 | 4     | Task management and project progress                                  | Not started |
 | 5     | Dashboard and revenue calculations                                    | Not started |
 | 6     | Demo mode, responsiveness, accessibility, security review, deployment | Not started |
 
-Nothing from Phases 2–6 is implemented: there is no client, project or task CRUD UI, no dashboard
+Clients are complete: list, empty state, create, detail, edit, confirmed delete, validation,
+pending and error states, tenant isolation, unit + database + end-to-end tests and a production
+build. Nothing from Phases 3–6 is implemented: there is no project or task CRUD UI, no dashboard
 metrics and no demo mode. `/dashboard` is deliberately an empty authenticated landing page.
 
 ## Repository notes

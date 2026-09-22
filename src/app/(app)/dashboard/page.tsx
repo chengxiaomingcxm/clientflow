@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Minimal authenticated landing page (Phase 1).
+ * Minimal authenticated landing page.
  *
  * It intentionally shows no metrics: revenue, client/project/task counts, recent
  * projects and upcoming deadlines belong to Phase 5. Its only purpose here is to
@@ -18,25 +19,27 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          You are signed in. This is the Phase 1 landing page.
-        </p>
+        <p className="text-muted-foreground">You are signed in. This is the landing page.</p>
       </header>
 
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Phase 1 &mdash; authentication and profiles</h2>
+            <h2>Phase 2 &mdash; clients</h2>
           </CardTitle>
           <CardDescription>
-            Accounts, sessions and protected routes are now in place.
+            Client management is available; projects, tasks and metrics come next.
           </CardDescription>
         </CardHeader>
 
         <CardContent>
           <p className="text-muted-foreground">
-            Client, project and task management arrive in Phases 2&ndash;4, and the dashboard
-            metrics in Phase 5. Until then this page deliberately stays empty.
+            <Link href="/clients" className="underline underline-offset-4">
+              Go to your clients
+            </Link>{" "}
+            to list, add, edit or delete them. Project and task management arrive in Phases
+            3&ndash;4, and the dashboard metrics in Phase 5. Until then this page deliberately stays
+            empty.
           </p>
         </CardContent>
       </Card>
